@@ -3,6 +3,8 @@ httpx==0.28.1
 pyjwt==2.10.1
 bcrypt==4.3.0
 twilio==9.5.2
+passlib[bcrypt]
+pydantic[email]
 asyncpg==0.30.0
 aioredis==2.0.1
 colorama==0.4.6
@@ -10,6 +12,7 @@ uvicorn==0.30.4
 pydantic==2.10.5
 aiohttp==3.11.13
 fastapi==0.115.6
+python-jose==3.4.0
 sqlalchemy==2.0.37
 python-dotenv==1.0.1
 psycopg2-binary==2.9.10

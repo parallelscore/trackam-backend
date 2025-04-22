@@ -10,22 +10,22 @@ class BaseConfig(BaseSettings):
     DESCRIPTION: str = Field('This is the backend service for Swift Track',
                              json_schema_extra={'env': 'DESCRIPTION'})
     VERSION: str = Field('1.0.0', json_schema_extra={'env': 'VERSION'})
-    CORS_ORIGINS: List[str] = Field(default=['*'], json_schema_extra={'env': 'CORS_ORIGINS'})
+    CORS_ORIGINS: List[str] = Field(default=['http://localhost:3000', 'http://localhost:8000'], json_schema_extra={'env': 'CORS_ORIGINS'})
     API_V1_STR: str = Field('/api/v1', json_schema_extra={'env': 'API_V1_STR'})
 
     POSTGRESQL_DATABASE_URL: str = Field(..., json_schema_extra={'env': 'POSTGRESQL_DATABASE_URL'})
+    REDIS_DATABASE_URL: str = Field(..., json_schema_extra={'env': 'REDIS_DATABASE_URL'})
 
-    REDIS_DATABASE_URL: str = Field(..., json_schema_extra={'env': 'ENCRYPTION_KEY'})
-    JWT_SECRET: str = Field(..., json_schema_extra={'env': 'BACKEND_BASE_URL'})
     OTP_EXPIRY_SECONDS: int = Field(600, json_schema_extra={'env': 'OTP_EXPIRY_SECONDS'})
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(10080, json_schema_extra={'env': 'ACCESS_TOKEN_EXPIRE_MINUTES'})
 
+    SMS_SERVICE_ENABLED: bool = Field(True, json_schema_extra={'env': 'SMS_SERVICE_ENABLED'})
     TWILIO_ACCOUNT_SID: str = Field(..., json_schema_extra={'env': 'TWILIO_ACCOUNT_SID'})
     TWILIO_AUTH_TOKEN: str = Field(..., json_schema_extra={'env': 'TWILIO_AUTH_TOKEN'})
-    TWILIO_WHATSAPP_NUMBER: str = Field(..., json_schema_extra={'env': 'TWILIO_WHATSAPP_NUMBER'})
+    TWILIO_PHONE_NUMBER: str = Field(..., json_schema_extra={'env': 'TWILIO_WHATSAPP_NUMBER'})
 
-    TRACKING_UPDATE_INTERVAL_SECONDS: int = Field(15, json_schema_extra={'env': 'TRACKING_UPDATE_INTERVAL_SECONDS'})
-    BASE_URL: str = Field(..., json_schema_extra={'env': 'BASE_URL'})
+    SECRET_KEY: str = Field(..., json_schema_extra={'env': 'SECRET_KEY'})
+    ALGORITHM: str = Field('HS256', json_schema_extra={'env': 'ALGORITHM'})
 
     model_config: ClassVar[ConfigDict] = ConfigDict(
         arbitrary_types_allowed=True,

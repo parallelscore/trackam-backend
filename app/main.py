@@ -7,9 +7,10 @@ from app.core.middleware import register_middlewares
 from app.api.models.model_init import create_all_tables
 from app.api.routes.server_metrics import ServerMetrics
 
-from app.api.routes.auth import AuthRouter
-from app.api.routes.delivery import DeliveryRouter
-from app.api.routes.tracking import TrackingRouter
+from app.api.routes.user import UserRouter
+from app.api.routes.login import LoginRouter
+from app.api.routes.profile import ProfileRouter
+from app.api.routes.register import RegisterRouter
 
 def create_app() -> FastAPI:
 
@@ -29,17 +30,18 @@ def create_app() -> FastAPI:
 
     server_metrics_router = ServerMetrics(app).router
 
-    auth_router = AuthRouter().router_manager.router
-    delivery_router = DeliveryRouter().router_manager.router
-    tracking_router = TrackingRouter().router_manager.router
-
+    user_router = UserRouter().router_manager.router
+    login_router = LoginRouter().router_manager.router
+    profile_router = ProfileRouter().router_manager.router
+    register_router = RegisterRouter().router_manager.router
 
     # Register the routers
     app.include_router(server_metrics_router)
 
-    app.include_router(auth_router, prefix=settings.API_V1_STR)
-    app.include_router(delivery_router, prefix=settings.API_V1_STR)
-    app.include_router(tracking_router, prefix=settings.API_V1_STR)
+    app.include_router(user_router, prefix=settings.API_V1_STR)
+    app.include_router(login_router, prefix=settings.API_V1_STR)
+    app.include_router(profile_router, prefix=settings.API_V1_STR)
+    app.include_router(register_router, prefix=settings.API_V1_STR)
 
     return app
 
