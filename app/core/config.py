@@ -27,6 +27,8 @@ class BaseConfig(BaseSettings):
     SECRET_KEY: str = Field(..., json_schema_extra={'env': 'SECRET_KEY'})
     ALGORITHM: str = Field('HS256', json_schema_extra={'env': 'ALGORITHM'})
 
+    FRONTEND_URL: str = Field(..., json_schema_extra={'env': 'FRONTEND_URL'})
+
     model_config: ClassVar[ConfigDict] = ConfigDict(
         arbitrary_types_allowed=True,
     )

@@ -1,4 +1,4 @@
-# app/schemas/user.py
+# app/schemas/user_schema.py
 import re
 from uuid import UUID
 from typing import Optional
