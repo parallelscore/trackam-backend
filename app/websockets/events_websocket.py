@@ -4,9 +4,6 @@ from typing import Dict, Any
 from datetime import datetime, timezone
 
 from app.utils.logging_util import setup_logger
-from app.services.delivery_service import DeliveryService
-from app.api.models.delivery_model import DeliveryStatusModel
-from app.schemas.create_location_update_schema import CreateLocationUpdateSchema
 from app.websockets.connection_manager_websocket import connection_manager_websocket
 
 
@@ -16,7 +13,6 @@ class EventsWebsocket:
     def __int__(cls):
 
         cls.logger = setup_logger(__name__)
-        cls.delivery_service = DeliveryService
 
     @classmethod
     async def process_location_update(cls, data: Dict[str, Any]):
