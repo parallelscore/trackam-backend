@@ -92,8 +92,10 @@ class DeliveryRouter:
             filter_conditions.append(DeliveryModel.vendor_id == current_user["id"])
 
             # Apply status filter if provided
-            if status:
+            if delivery_status:
                 filter_conditions.append(DeliveryModel.status == delivery_status)
+
+                self.logger.info(f"Filtering deliveries by status: {delivery_status}")
 
             # Apply search filter if provided
             if search:
@@ -111,14 +113,7 @@ class DeliveryRouter:
             # Calculate pagination
             offset = (page - 1) * limit
 
-            # Get total count for pagination
-            count_query = f"SELECT COUNT(*) FROM deliveries WHERE vendor_id = '{current_user['id']}'"
-            if status:
-                count_query += f" AND status = '{status}'"
-            if search:
-                count_query += f" AND (tracking_id ILIKE '%{search}%' OR customer_name ILIKE '%{search}%' OR rider_name ILIKE '%{search}%')"
-
-            # Get deliveries
+            # Get deliveries with pagination
             deliveries = await database_operator_util.find_all(
                 DeliveryModel,
                 filter_expr,
@@ -127,9 +122,11 @@ class DeliveryRouter:
                 order_by=DeliveryModel.created_at.desc()
             )
 
-            # Get total count
-            total_count = await database_operator_util.execute_raw_query(count_query)
-            total_count = total_count[0]['count'] if total_count else 0
+            # Get total count using ORM count method instead of raw SQL
+            total_count = await database_operator_util.count_entries(
+                DeliveryModel,
+                filter_expr
+            )
 
             return {
                 "items": deliveries,
