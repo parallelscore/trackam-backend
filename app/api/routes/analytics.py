@@ -7,6 +7,7 @@ from app.utils.logging_util import setup_logger
 from app.utils.security_util import SecurityUtil
 from app.api.routes.base_router import RouterManager
 from app.api.models.delivery_model import DeliveryModel
+
 from app.utils.database_operator_util import database_operator_util
 
 
@@ -182,6 +183,17 @@ class AnalyticsRouter:
                 detail="Failed to retrieve dashboard statistics"
             )
 
+    # Helper: shift a date (always on day=1) back by `months` full months
+    async def _shift_month(self, date: datetime, months: int) -> datetime:
+        year = date.year
+        month = date.month - months
+        # borrow years if month <= 0
+        while month <= 0:
+            month += 12
+            year -= 1
+        # return same day/hour/minute etc., but month/year adjusted
+        return date.replace(year=year, month=month)
+
     async def get_delivery_analytics(
             self,
             time_range: str = Query("week", description="Time range: 'week', 'month', or 'year'"),
@@ -212,14 +224,17 @@ class AnalyticsRouter:
                     )
 
                     # Count by status
+                    created = sum(1 for d in day_deliveries if d.get('status') == 'created')
                     completed = sum(1 for d in day_deliveries if d.get('status') == 'completed')
                     in_progress = sum(1 for d in day_deliveries if d.get('status') == 'in_progress')
                     cancelled = sum(1 for d in day_deliveries if d.get('status') == 'cancelled')
+
 
                     day_name = date.strftime("%a")  # Short name of day (Mon, Tue, etc.)
 
                     data.append({
                         "name": day_name,
+                        "created": created,
                         "completed": completed,
                         "inProgress": in_progress,
                         "cancelled": cancelled
@@ -242,6 +257,7 @@ class AnalyticsRouter:
                     )
 
                     # Count by status
+                    created = sum(1 for d in week_deliveries if d.get('status') == 'created')
                     completed = sum(1 for d in week_deliveries if d.get('status') == 'completed')
                     in_progress = sum(1 for d in week_deliveries if d.get('status') == 'in_progress')
                     cancelled = sum(1 for d in week_deliveries if d.get('status') == 'cancelled')
@@ -250,25 +266,30 @@ class AnalyticsRouter:
 
                     data.append({
                         "name": week_name,
+                        "created": created,
                         "completed": completed,
                         "inProgress": in_progress,
                         "cancelled": cancelled
                     })
 
             elif time_range == "year":
-                # Get data for last 12 months
+                # compute the first instant of this month
+                first_of_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+                # iterate from 11 months ago up to now
                 for i in range(11, -1, -1):
-                    # Calculate month start and end dates
-                    month_date = now.replace(day=1) - timedelta(days=1)  # Last day of previous month
-                    month_date = month_date.replace(day=1)  # First day of previous month
-                    month_date = month_date - timedelta(days=i*30)  # Approximate month offset
+                    # month_start is the first day of the month, 00:00
+                    month_start = await self._shift_month(first_of_this_month, i)
 
-                    month_start = month_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                    next_month = month_date.replace(day=28) + timedelta(days=4)  # Move to next month
-                    month_end = next_month.replace(day=1) - timedelta(days=1)  # Last day of current month
-                    month_end = month_end.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    if i == 0:
+                        # current month: end at the present moment
+                        month_end = now
+                    else:
+                        # past month: take the first of the *next* month, then step back 1 µs
+                        next_month_start = await self._shift_month(first_of_this_month, i - 1)
+                        month_end = next_month_start - timedelta(microseconds=1)
 
-                    # Get deliveries for this month
+                    # query deliveries in [month_start, month_end]
                     month_deliveries = await database_operator_util.find_all(
                         DeliveryModel,
                         and_(
@@ -278,18 +299,21 @@ class AnalyticsRouter:
                         )
                     )
 
-                    # Count by status
-                    completed = sum(1 for d in month_deliveries if d.get('status') == 'completed')
+                    # tally statuses
+                    created     = sum(1 for d in month_deliveries if d.get('status') == 'created')
+                    completed   = sum(1 for d in month_deliveries if d.get('status') == 'completed')
                     in_progress = sum(1 for d in month_deliveries if d.get('status') == 'in_progress')
-                    cancelled = sum(1 for d in month_deliveries if d.get('status') == 'cancelled')
+                    cancelled   = sum(1 for d in month_deliveries if d.get('status') == 'cancelled')
 
-                    month_name = month_date.strftime("%b")  # Short name of month (Jan, Feb, etc.)
+                    # label by month (e.g. “Jan”, “Feb”)
+                    month_name = month_start.strftime("%b")
 
                     data.append({
-                        "name": month_name,
-                        "completed": completed,
+                        "name":       month_name,
+                        "created":    created,
+                        "completed":  completed,
                         "inProgress": in_progress,
-                        "cancelled": cancelled
+                        "cancelled":  cancelled
                     })
 
             return data
