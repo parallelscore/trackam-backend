@@ -20,9 +20,11 @@ class BaseConfig(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(10080, json_schema_extra={'env': 'ACCESS_TOKEN_EXPIRE_MINUTES'})
 
     SMS_SERVICE_ENABLED: bool = Field(True, json_schema_extra={'env': 'SMS_SERVICE_ENABLED'})
+    WHATSAPP_SERVICE_ENABLED: bool = Field(True, json_schema_extra={'env': 'WHATSAPP_SERVICE_ENABLED'})
     TWILIO_ACCOUNT_SID: str = Field(..., json_schema_extra={'env': 'TWILIO_ACCOUNT_SID'})
     TWILIO_AUTH_TOKEN: str = Field(..., json_schema_extra={'env': 'TWILIO_AUTH_TOKEN'})
-    TWILIO_PHONE_NUMBER: str = Field(..., json_schema_extra={'env': 'TWILIO_WHATSAPP_NUMBER'})
+    TWILIO_PHONE_NUMBER: str = Field(..., json_schema_extra={'env': 'TWILIO_PHONE_NUMBER'})
+    TWILIO_WHATSAPP_NUMBER: str = Field(..., json_schema_extra={'env': 'TWILIO_WHATSAPP_NUMBER'})
 
     SECRET_KEY: str = Field(..., json_schema_extra={'env': 'SECRET_KEY'})
     ALGORITHM: str = Field('HS256', json_schema_extra={'env': 'ALGORITHM'})

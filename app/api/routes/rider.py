@@ -1,8 +1,7 @@
 # app/api/routes/rider.py
 import json
 from datetime import datetime, timezone
-from fastapi import HTTPException, status, Query
-from sqlalchemy import and_
+from fastapi import HTTPException, status
 
 from app.utils.logging_util import setup_logger
 from app.api.routes.base_router import RouterManager

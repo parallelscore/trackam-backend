@@ -73,7 +73,7 @@ class DeliveryModel(base):
                 "name": self.rider_name,
                 "phone_number": self.rider_phone,
                 "current_location": self.rider_current_location
-            } if self.rider_id else None,
+            },
 
             "package": {
                 "description": self.package_description,

@@ -11,6 +11,7 @@ from fastapi import Depends, HTTPException, status, Query
 from app.core.config import settings
 from app.utils.logging_util import setup_logger
 from app.utils.security_util import SecurityUtil
+from app.services.sms_service import sms_service
 from app.api.routes.base_router import RouterManager
 from app.schemas.delivery_schema import CreateDelivery
 from app.api.models.delivery_model import DeliveryModel
@@ -28,6 +29,7 @@ class DeliveryRouter:
     def __init__(self):
         self.router_manager = RouterManager()
         self.logger = setup_logger(__name__)
+        self.base_url = settings.FRONTEND_URL
 
         # Get all deliveries with filtering and pagination
         self.router_manager.add_route(
@@ -72,6 +74,15 @@ class DeliveryRouter:
             tags=["delivery"],
             status_code=status.HTTP_200_OK
         )
+
+        self.router_manager.add_route(
+            path="/deliveries/{tracking_id}/resend-notifications",
+            handler_method=self.resend_notifications,
+            methods=["POST"],
+            tags=["delivery"],
+            status_code=status.HTTP_200_OK
+        )
+
 
     async def get_deliveries(
             self,
@@ -155,9 +166,8 @@ class DeliveryRouter:
             otp_expiry = datetime.now(timezone.utc) + timedelta(minutes=60)  # OTP valid for 1 hour
 
             # Generate tracking links
-            base_url = settings.FRONTEND_URL
-            rider_link = f"{base_url}/rider/{tracking_id}"
-            customer_link = f"{base_url}/track/{tracking_id}"
+            rider_link = f"{self.base_url}/rider/{tracking_id}"
+            customer_link = f"{self.base_url}/track/{tracking_id}"
 
             # Create delivery object
             delivery = {
@@ -205,11 +215,17 @@ class DeliveryRouter:
                 DeliveryModel.tracking_id == tracking_id
             )
 
+            self.logger.info(f"Delivery created successfully with tracking ID: {tracking_id}")
+            self.logger.info(f"Delivery details: {created_delivery}")
+
             if not created_delivery:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to create delivery"
                 )
+
+            # Send WhatsApp messages to rider and customer
+            await self._send_delivery_notifications(created_delivery)
 
             return created_delivery
 
@@ -219,6 +235,88 @@ class DeliveryRouter:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to create delivery: {str(e)}"
             )
+
+    async def _send_delivery_notifications(self, delivery):
+        """
+        Send WhatsApp notifications to rider and customer.
+
+        Args:
+            delivery: The delivery object
+        """
+        try:
+            # Extract necessary information
+            tracking_id = delivery.get("tracking_id")
+
+            # Extract from nested structures
+            customer = delivery.get("customer", {})
+            rider = delivery.get("rider", {})
+            package = delivery.get("package", {})
+            tracking = delivery.get("tracking", {})
+
+            otp = tracking.get("otp")
+            rider_phone = rider.get("phone_number")
+            customer_phone = customer.get("phone_number")
+            rider_accept_link = f"{self.base_url}/rider/accept/{tracking_id}"
+            customer_link = tracking.get("customer_link")
+            customer_name = customer.get("name")
+            customer_address = customer.get("address")
+            package_description = package.get("description")
+            special_instructions = package.get("special_instructions", "")
+
+            # Create rider message
+            rider_message = (
+                f"*New Delivery Request* 🚚\n\n"
+                f"*Tracking ID:* {tracking_id}\n"
+                f"*Customer:* {customer_name}\n"
+                f"*Address:* {customer_address}\n"
+                f"*Package:* {package_description}\n"
+            )
+
+            # Add special instructions if any
+            if special_instructions:
+                rider_message += f"Special Instructions: {special_instructions}\n\n"
+            else:
+                rider_message += "\n"
+
+            rider_message += (
+                f"*Your OTP:* {otp}\n\n"
+                f"Click the link below to accept the delivery:\n"
+                f"{rider_accept_link}"
+            )
+
+            self.logger.info(f"rider_message: {rider_message}")
+
+            # Create customer message
+            customer_message = (
+                f"*TrackAm Delivery Confirmation* ✅\n\n"
+                f"Your delivery has been created and a rider will be assigned soon.\n\n"
+                f"*Tracking ID:* {tracking_id}\n"
+                f"*Package:* {package_description}\n\n"
+                f"Use this link to track your delivery in real-time:\n"
+                f"{customer_link}\n\n"
+                f"Thank you for using TrackAm! 🙏"
+            )
+
+            self.logger.info(f"customer_message: {customer_message}")
+
+            self.logger.info(f"Sending WhatsApp messages to rider: {rider_phone} and customer: {customer_phone}")
+
+            # Send WhatsApp messages
+            rider_sent = await sms_service.send_whatsapp(rider_phone, rider_message)
+            customer_sent = await sms_service.send_whatsapp(customer_phone, customer_message)
+
+            self.logger.info(f"WhatsApp messages sent to rider: {rider_sent}, customer: {customer_sent}")
+
+            if rider_sent and customer_sent:
+                self.logger.info(f"WhatsApp notifications sent successfully for delivery {tracking_id}")
+            else:
+                self.logger.warning(f"Some WhatsApp notifications failed for delivery {tracking_id}")
+
+            return rider_sent and customer_sent
+
+        except Exception as e:
+            self.logger.error(f"Error sending delivery notifications: {str(e)}")
+            return False
 
     async def get_delivery(self, delivery_id: str, current_user: dict = Depends(get_current_user)):
         """
@@ -340,3 +438,43 @@ class DeliveryRouter:
                 detail="Failed to cancel delivery"
             )
 
+    async def resend_notifications(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
+        """
+        Resend WhatsApp notifications to rider and customer.
+        """
+        try:
+            # Check if delivery exists and belongs to this vendor
+            delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                and_(
+                    DeliveryModel.tracking_id == tracking_id,
+                    DeliveryModel.vendor_id == current_user["id"]
+                )
+            )
+
+            if not delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Delivery not found"
+                )
+
+            # Send notifications
+            success = await self._send_delivery_notifications(delivery)
+
+            if not success:
+                return {
+                    "success": False,
+                    "message": "Failed to send some notifications. Please try again later."
+                }
+
+            return {
+                "success": True,
+                "message": "Notifications resent successfully"
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error resending notifications: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to resend notifications"
+            )
