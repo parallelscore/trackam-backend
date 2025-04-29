@@ -15,7 +15,7 @@ from app.api.routes.customer import CustomerRouter
 from app.api.routes.register import RegisterRouter
 from app.api.routes.delivery import DeliveryRouter
 from app.api.routes.analytics import AnalyticsRouter
-from app.api.routes.websocket import router as websocket_router
+from app.api.routes.websocket import WebSocketRouter
 
 def create_app() -> FastAPI:
 
@@ -41,20 +41,22 @@ def create_app() -> FastAPI:
     profile_router = ProfileRouter().router_manager.router
     register_router = RegisterRouter().router_manager.router
     delivery_router = DeliveryRouter().router_manager.router
-    analytic_router = AnalyticsRouter().router_manager.router
     customer_router = CustomerRouter().router_manager.router
+    analytic_router = AnalyticsRouter().router_manager.router
+    websocket_router = WebSocketRouter().router_manager.router
 
     # Register the routers
     app.include_router(server_metrics_router)
 
     app.include_router(user_router, prefix=settings.API_V1_STR)
     app.include_router(login_router, prefix=settings.API_V1_STR)
+    app.include_router(rider_router, prefix=settings.API_V1_STR)
     app.include_router(profile_router, prefix=settings.API_V1_STR)
     app.include_router(register_router, prefix=settings.API_V1_STR)
     app.include_router(delivery_router, prefix=settings.API_V1_STR)
     app.include_router(analytic_router, prefix=settings.API_V1_STR)
-    app.include_router(rider_router, prefix=settings.API_V1_STR)
     app.include_router(customer_router, prefix=settings.API_V1_STR)
+    app.include_router(websocket_router, prefix=settings.API_V1_STR)
 
     # Include WebSocket router
     app.include_router(websocket_router, prefix=settings.API_V1_STR)
