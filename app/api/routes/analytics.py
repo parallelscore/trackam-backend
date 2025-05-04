@@ -49,14 +49,14 @@ class AnalyticsRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # # Get top riders
-        # self.router_manager.add_route(
-        #     path="/deliveries/stats/top-riders",
-        #     handler_method=self.get_top_riders,
-        #     methods=["GET"],
-        #     tags=["analytics"],
-        #     status_code=status.HTTP_200_OK
-        # )
+        # Get top riders
+        self.router_manager.add_route(
+            path="/deliveries/stats/top-riders",
+            handler_method=self.get_top_riders,
+            methods=["GET"],
+            tags=["analytics"],
+            status_code=status.HTTP_200_OK
+        )
 
     async def cancel_delivery(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
         """
@@ -343,10 +343,10 @@ class AnalyticsRouter:
             # Group deliveries by rider
             rider_stats = {}
             for delivery in deliveries:
-                if not delivery.rider_id:
+                if not delivery.get("rider_id"):
                     continue
 
-                rider_id = str(delivery.rider_id)
+                rider_id = str(delivery.get("rider_id"))
 
                 if rider_id not in rider_stats:
                     rider_stats[rider_id] = {
