@@ -441,6 +441,7 @@ class DeliveryRouter:
     async def resend_notifications(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
         """
         Resend WhatsApp notifications to rider and customer.
+        If OTP has expired, generate a new one before sending.
         """
         try:
             # Check if delivery exists and belongs to this vendor
@@ -458,7 +459,52 @@ class DeliveryRouter:
                     detail="Delivery not found"
                 )
 
-            # Send notifications
+            # Get the current time and OTP expiry time
+            current_time = datetime.now(timezone.utc)
+            otp_expiry_str = delivery.get("tracking", {}).get("otp_expiry")
+
+            otp_expired = True
+            if otp_expiry_str:
+                try:
+                    otp_expiry_datetime = datetime.fromisoformat(otp_expiry_str)
+                    otp_expired = current_time > otp_expiry_datetime
+                except (ValueError, TypeError):
+                    self.logger.error(f"Invalid OTP expiry format for delivery {tracking_id}")
+                    # Default to generating a new OTP if we can't parse the expiry
+                    otp_expired = True
+
+            # If OTP has expired, generate a new one
+            if otp_expired:
+                self.logger.info(f"OTP expired for delivery {tracking_id}, generating new OTP")
+
+                # Generate new OTP
+                new_otp = ''.join(random.choices(string.digits, k=6))
+                new_otp_expiry = current_time + timedelta(minutes=60)  # OTP valid for 1 hour
+
+                # Update delivery with new OTP (use the actual column names)
+                update_data = {
+                    "otp": new_otp,
+                    "otp_expiry": new_otp_expiry,
+                    "updated_at": current_time
+                }
+
+                await database_operator_util.update(
+                    model=DeliveryModel,
+                    filter_by={"tracking_id": tracking_id},
+                    data=update_data
+                )
+
+                # Fetch updated delivery data
+                delivery = await database_operator_util.find_one(
+                    DeliveryModel,
+                    DeliveryModel.tracking_id == tracking_id
+                )
+
+                self.logger.info(f"Generated new OTP {new_otp} for delivery {tracking_id}")
+            else:
+                self.logger.info(f"Using existing OTP for delivery {tracking_id}")
+
+            # Send notifications with current (potentially new) OTP
             success = await self._send_delivery_notifications(delivery)
 
             if not success:
@@ -469,7 +515,7 @@ class DeliveryRouter:
 
             return {
                 "success": True,
-                "message": "Notifications resent successfully"
+                "message": "Notifications resent successfully" + (", with new OTP" if otp_expired else "")
             }
 
         except Exception as e:
