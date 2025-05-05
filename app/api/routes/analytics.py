@@ -7,7 +7,6 @@ from app.utils.logging_util import setup_logger
 from app.utils.security_util import SecurityUtil
 from app.api.routes.base_router import RouterManager
 from app.api.models.delivery_model import DeliveryModel
-
 from app.utils.database_operator_util import database_operator_util
 
 
