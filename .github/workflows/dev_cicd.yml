@@ -1,0 +1,83 @@
+name: Dev CICD
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - 'main'
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - 'main'
+
+env:
+  ENV: dev
+
+jobs:
+
+  build-docker-image:
+    runs-on: ubuntu-latest
+
+    outputs:
+      image-tag: ${{ steps.vars.outputs.image-tag }}
+
+    steps:
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      -
+        name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      -
+        name: Build (but not push) Docker image
+        id: vars
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev
+          load: true
+          build-args: |
+            POSTGRESQL_DATABASE_URL=${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
+            REDIS_DATABASE_URL=${{ secrets.REDIS_DATABASE_URL }}
+            OTP_EXPIRY_SECONDS=${{ secrets.OTP_EXPIRY_SECONDS }}
+            ACCESS_TOKEN_EXPIRE_MINUTES=${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
+            WHATSAPP_SERVICE_ENABLED=${{ secrets.WHATSAPP_SERVICE_ENABLED }}
+            SMS_SERVICE_ENABLED=${{ secrets.SMS_SERVICE_ENABLED }}
+            TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
+            TWILIO_AUTH_TOKEN=${{ secrets.TWILIO_AUTH_TOKEN }}
+            TWILIO_PHONE_NUMBER=${{ secrets.TWILIO_PHONE_NUMBER }}
+            TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
+            ALGORITHM=${{ secrets.ALGORITHM }}
+            FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+
+      -
+        name: Save image tag
+        run: echo "::set-output name=image-tag::${{ secrets.DOCKER_USERNAME }}/${{ secrets.DOCKER_IMAGE_NAME }}:dev"
+
+  deploy-to-kubernetes:
+    needs: build-docker-image
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Install and configure kubectl
+        run: |
+          curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          echo "${{ secrets.ELECTED_K8_KUBECONFIG }}" | base64 --decode > kubeconfig.yaml
+
+      -
+        name: Deploy to Kubernetes
+        run: |
+          KUBECONFIG=kubeconfig.yaml kubectl rollout restart deployment/${{ secrets.DEV_DEPLOYMENT_NAME }} -n ${{ secrets.DEV_NAMESPACE }}

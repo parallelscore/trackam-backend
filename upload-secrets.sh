@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -- Default configurations --
-ENV_FILE=".env"
+ENV_FILE=".env.dev"
 PREFIX=""
 SUFFIX=""
 
