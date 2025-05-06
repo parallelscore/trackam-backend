@@ -48,7 +48,6 @@ jobs:
           load: true
           build-args: |
             POSTGRESQL_DATABASE_URL=${{ secrets.DEV_POSTGRESQL_DATABASE_URL }}
-            REDIS_DATABASE_URL=${{ secrets.REDIS_DATABASE_URL }}
             OTP_EXPIRY_SECONDS=${{ secrets.OTP_EXPIRY_SECONDS }}
             ACCESS_TOKEN_EXPIRE_MINUTES=${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
             WHATSAPP_SERVICE_ENABLED=${{ secrets.WHATSAPP_SERVICE_ENABLED }}
