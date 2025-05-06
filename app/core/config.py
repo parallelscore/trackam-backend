@@ -14,7 +14,6 @@ class BaseConfig(BaseSettings):
     API_V1_STR: str = Field('/api/v1', json_schema_extra={'env': 'API_V1_STR'})
 
     POSTGRESQL_DATABASE_URL: str = Field(..., json_schema_extra={'env': 'POSTGRESQL_DATABASE_URL'})
-    REDIS_DATABASE_URL: str = Field(..., json_schema_extra={'env': 'REDIS_DATABASE_URL'})
 
     OTP_EXPIRY_SECONDS: int = Field(600, json_schema_extra={'env': 'OTP_EXPIRY_SECONDS'})
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(10080, json_schema_extra={'env': 'ACCESS_TOKEN_EXPIRE_MINUTES'})

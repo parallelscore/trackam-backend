@@ -80,4 +80,4 @@ jobs:
       -
         name: Deploy to Kubernetes
         run: |
-          KUBECONFIG=kubeconfig.yaml kubectl rollout restart deployment/${{ secrets.DEV_DEPLOYMENT_NAME }} -n ${{ secrets.DEV_NAMESPACE }}
+          KUBECONFIG=kubeconfig.yaml kubectl rollout restart deployment/${{ secrets.DEPLOYMENT_NAME }} -n ${{ secrets.NAMESPACE }}
