@@ -29,10 +29,19 @@ class RiderRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Accept delivery (change status to accepted)
+        # Accept delivery (change status to accept)
         self.router_manager.add_route(
             path="/rider/accept/{tracking_id}",
             handler_method=self.accept_delivery,
+            methods=["POST"],
+            tags=["rider"],
+            status_code=status.HTTP_200_OK
+        )
+
+        # Decline or cancel delivery
+        self.router_manager.add_route(
+            path="/rider/decline/{tracking_id}",
+            handler_method=self.decline_delivery,
             methods=["POST"],
             tags=["rider"],
             status_code=status.HTTP_200_OK
@@ -160,7 +169,7 @@ class RiderRouter:
                     detail=f"Cannot accept delivery with status '{delivery.get('status')}'"
                 )
 
-            # Update delivery to assigned state (it will be accepted after OTP verification)
+            # Update delivery to the assigned state (it will be accepted after OTP verification)
             update_data = {
                 "status": "assigned",
                 "updated_at": datetime.now(timezone.utc)
@@ -197,6 +206,69 @@ class RiderRouter:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to accept delivery"
+            )
+
+    async def decline_delivery(self, tracking_id: str):
+        """
+        Decline a delivery assignment.
+        """
+        try:
+            # Check if delivery exists
+            delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                DeliveryModel.tracking_id == tracking_id
+            )
+
+            if not delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Delivery not found"
+                )
+
+            # Check if delivery is in a state that can be declined
+            if delivery.get('status') not in ['created', 'assigned']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot decline delivery with status '{delivery.get('status')}'"
+                )
+
+            # Update delivery to cancelled state
+            update_data = {
+                "status": "cancelled",
+                "updated_at": datetime.now(timezone.utc)
+            }
+
+            await database_operator_util.update(
+                model=DeliveryModel,
+                filter_by={"tracking_id": tracking_id},
+                data=update_data
+            )
+
+            # Get updated delivery
+            updated_delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                DeliveryModel.tracking_id == tracking_id
+            )
+
+            # Broadcast status update via WebSocket
+            await EventsWebsocket.process_status_update({
+                "tracking_id": tracking_id,
+                "status": "cancelled"
+            })
+
+            return {
+                "success": True,
+                "message": "Delivery declined successfully",
+                "delivery": updated_delivery
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error declining delivery: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to decline delivery"
             )
 
     async def start_tracking(self, tracking_id: str):
