@@ -92,15 +92,29 @@ class RiderRouter:
                 )
 
             # Check if OTP is correct
-            if delivery.get('otp') != data.otp:
+            if delivery.get('tracking').get('otp') != data.otp:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid OTP"
                 )
 
             # Check if OTP is expired
-            otp_expiry = delivery.get('otp_expiry')
-            if not otp_expiry or datetime.now(timezone.utc) > datetime.fromisoformat(otp_expiry):
+            otp_expiry = delivery.get('tracking').get('otp_expiry')
+
+            if not otp_expiry:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="OTP has expired"
+                )
+
+            # Parse the expiry time and ensure it's timezone-aware
+            expiry_datetime = datetime.fromisoformat(otp_expiry)
+            if expiry_datetime.tzinfo is None:
+                # If the parsed datetime is naive, assume it's in UTC
+                expiry_datetime = expiry_datetime.replace(tzinfo=timezone.utc)
+
+            # Now compare with the current UTC time
+            if datetime.now(timezone.utc) > expiry_datetime:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="OTP has expired"
