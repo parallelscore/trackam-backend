@@ -366,8 +366,10 @@ class RiderRouter:
                     detail="Delivery not found"
                 )
 
+            self.logger.info('delivery: %s', delivery)
+
             # Check if tracking is active
-            if not delivery.get('is_tracking_active'):
+            if not delivery.get('tracking').get('active'):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Tracking is not active for this delivery"
@@ -455,7 +457,7 @@ class RiderRouter:
                     detail=f"Cannot complete delivery with status '{delivery.get('status')}'"
                 )
 
-            # Update delivery status to 'completed' and deactivate tracking
+            # Update the delivery status to 'completed' and deactivate tracking
             update_data = {
                 "status": "completed",
                 "is_tracking_active": False,
