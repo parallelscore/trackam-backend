@@ -40,7 +40,7 @@ class DeliveryRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Create new delivery
+        # Create a new delivery
         self.router_manager.add_route(
             path="/deliveries",
             handler_method=self.create_delivery,
@@ -78,6 +78,15 @@ class DeliveryRouter:
         self.router_manager.add_route(
             path="/deliveries/{tracking_id}/resend-notifications",
             handler_method=self.resend_notifications,
+            methods=["POST"],
+            tags=["delivery"],
+            status_code=status.HTTP_200_OK
+        )
+
+        # Add a new endpoint for notifying customer after OTP verification
+        self.router_manager.add_route(
+            path="/deliveries/{tracking_id}/notify-customer",
+            handler_method=self.notify_customer,
             methods=["POST"],
             tags=["delivery"],
             status_code=status.HTTP_200_OK
@@ -169,7 +178,7 @@ class DeliveryRouter:
             rider_link = f"{self.base_url}/rider/{tracking_id}"
             customer_link = f"{self.base_url}/track/{tracking_id}"
 
-            # Create delivery object
+            # Create a delivery object
             delivery = {
                 "id": str(uuid.uuid4()),
                 "tracking_id": tracking_id,
@@ -224,8 +233,8 @@ class DeliveryRouter:
                     detail="Failed to create delivery"
                 )
 
-            # Send WhatsApp messages to rider and customer
-            await self._send_delivery_notifications(created_delivery)
+            # Send WhatsApp notification to rider only (not to customer)
+            await self._send_rider_notification(created_delivery)
 
             return created_delivery
 
@@ -236,9 +245,9 @@ class DeliveryRouter:
                 detail=f"Failed to create delivery: {str(e)}"
             )
 
-    async def _send_delivery_notifications(self, delivery):
+    async def _send_rider_notification(self, delivery):
         """
-        Send WhatsApp notifications to rider and customer.
+        Send WhatsApp notification to rider only.
 
         Args:
             delivery: The delivery object
@@ -248,16 +257,14 @@ class DeliveryRouter:
             tracking_id = delivery.get("tracking_id")
 
             # Extract from nested structures
-            customer = delivery.get("customer", {})
             rider = delivery.get("rider", {})
+            customer = delivery.get("customer", {})
             package = delivery.get("package", {})
             tracking = delivery.get("tracking", {})
 
             otp = tracking.get("otp")
             rider_phone = rider.get("phone_number")
-            customer_phone = customer.get("phone_number")
             rider_accept_link = f"{self.base_url}/rider/accept/{tracking_id}"
-            customer_link = tracking.get("customer_link")
             customer_name = customer.get("name")
             customer_address = customer.get("address")
             package_description = package.get("description")
@@ -286,12 +293,58 @@ class DeliveryRouter:
 
             self.logger.info(f"rider_message: {rider_message}")
 
-            # Create customer message
+            # Send WhatsApp message to rider only
+            rider_sent = await sms_service.send_whatsapp(rider_phone, rider_message)
+
+            if rider_sent:
+                self.logger.info(f"WhatsApp notification sent to rider for delivery {tracking_id}")
+                return True
+            else:
+                self.logger.warning(f"Failed to send WhatsApp notification to rider for delivery {tracking_id}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error sending rider notification: {str(e)}")
+            return False
+
+    async def notify_customer(self, tracking_id: str):
+        """
+        Send notification to customer after rider OTP verification.
+
+        Args:
+            tracking_id: Tracking ID of the delivery
+        """
+        try:
+            # Get the delivery
+            delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                DeliveryModel.tracking_id == tracking_id
+            )
+
+            if not delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Delivery not found"
+                )
+
+            # Extract necessary information
+            customer = delivery.get("customer", {})
+            rider = delivery.get("rider", {})
+            package = delivery.get("package", {})
+            tracking = delivery.get("tracking", {})
+
+            customer_phone = customer.get("phone_number")
+            customer_name = customer.get("name")
+            package_description = package.get("description")
+            rider_name = rider.get("name", "Your rider")
+            customer_link = tracking.get("customer_link")
+
+            # Create customer message for OTP verification success
             customer_message = (
-                f"*TrackAm Delivery Confirmation* ✅\n\n"
-                f"Your delivery has been created and a rider will be assigned soon.\n\n"
-                f"*Tracking ID:* {tracking_id}\n"
-                f"*Package:* {package_description}\n\n"
+                f"*Package On the Way!* 🚚\n\n"
+                f"Hello {customer_name}, your package \"{package_description}\" is now on its way! "
+                f"{rider_name} has accepted the delivery and will deliver your package soon.\n\n"
+                f"*Tracking ID:* {tracking_id}\n\n"
                 f"Use this link to track your delivery in real-time:\n"
                 f"{customer_link}\n\n"
                 f"Thank you for using TrackAm! 🙏"
@@ -299,24 +352,22 @@ class DeliveryRouter:
 
             self.logger.info(f"customer_message: {customer_message}")
 
-            self.logger.info(f"Sending WhatsApp messages to rider: {rider_phone} and customer: {customer_phone}")
-
-            # Send WhatsApp messages
-            rider_sent = await sms_service.send_whatsapp(rider_phone, rider_message)
+            # Send WhatsApp message to customer
             customer_sent = await sms_service.send_whatsapp(customer_phone, customer_message)
 
-            self.logger.info(f"WhatsApp messages sent to rider: {rider_sent}, customer: {customer_sent}")
-
-            if rider_sent and customer_sent:
-                self.logger.info(f"WhatsApp notifications sent successfully for delivery {tracking_id}")
+            if customer_sent:
+                self.logger.info(f"WhatsApp notification sent to customer for delivery {tracking_id}")
+                return {"success": True, "message": "Customer notification sent successfully"}
             else:
-                self.logger.warning(f"Some WhatsApp notifications failed for delivery {tracking_id}")
-
-            return rider_sent and customer_sent
+                self.logger.warning(f"Failed to send WhatsApp notification to customer for delivery {tracking_id}")
+                return {"success": False, "message": "Failed to send customer notification"}
 
         except Exception as e:
-            self.logger.error(f"Error sending delivery notifications: {str(e)}")
-            return False
+            self.logger.error(f"Error sending customer notification: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send customer notification: {str(e)}"
+            )
 
     async def get_delivery(self, delivery_id: str, current_user: dict = Depends(get_current_user)):
         """
@@ -440,7 +491,7 @@ class DeliveryRouter:
 
     async def resend_notifications(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
         """
-        Resend WhatsApp notifications to rider and customer.
+        Resend WhatsApp notifications to rider.
         If OTP has expired, generate a new one before sending.
         """
         try:
@@ -504,18 +555,18 @@ class DeliveryRouter:
             else:
                 self.logger.info(f"Using existing OTP for delivery {tracking_id}")
 
-            # Send notifications with current (potentially new) OTP
-            success = await self._send_delivery_notifications(delivery)
+            # Send notifications only to rider
+            success = await self._send_rider_notification(delivery)
 
             if not success:
                 return {
                     "success": False,
-                    "message": "Failed to send some notifications. Please try again later."
+                    "message": "Failed to send rider notification. Please try again later."
                 }
 
             return {
                 "success": True,
-                "message": "Notifications resent successfully" + (", with new OTP" if otp_expired else "")
+                "message": "Rider notification resent successfully" + (", with new OTP" if otp_expired else "")
             }
 
         except Exception as e:
