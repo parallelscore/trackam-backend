@@ -156,8 +156,19 @@ class AnalyticsRouter:
             # Calculate average delivery time (for completed deliveries)
             delivery_times = []
             for d in deliveries:
-                if d.get('status') == 'completed' and d.created_at and d.updated_at:
-                    delivery_time = (d.updated_at - d.created_at).total_seconds() / 60  # in minutes
+                if d.get('status') == 'completed' and d.get('created_at') and d.get('updated_at'):
+                    # Convert string dates to datetime objects if they're not already
+                    created_at = d.get('created_at')
+                    updated_at = d.get('updated_at')
+
+                    if isinstance(created_at, str):
+                        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+
+                    if isinstance(updated_at, str):
+                        updated_at = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+
+                    # Now perform the subtraction with datetime objects
+                    delivery_time = (updated_at - created_at).total_seconds() / 60  # in minutes
                     delivery_times.append(delivery_time)
 
             avg_delivery_time = round(sum(delivery_times) / len(delivery_times)) if delivery_times else 0
