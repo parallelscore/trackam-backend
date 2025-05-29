@@ -164,7 +164,7 @@ class DeliveryRouter:
 
     async def create_delivery(self, delivery_data: CreateDelivery, current_user: dict = Depends(get_current_user)):
         """
-        Create a new delivery.
+        Create a new delivery with optional customer location.
         """
         try:
             # Generate a unique tracking ID
@@ -178,6 +178,19 @@ class DeliveryRouter:
             rider_link = f"{self.base_url}/rider/{tracking_id}"
             customer_link = f"{self.base_url}/track/{tracking_id}"
 
+            # Process customer location if provided
+            customer_location_data = None
+            if delivery_data.customer.location:
+                customer_location_data = {
+                    "latitude": delivery_data.customer.location.latitude,
+                    "longitude": delivery_data.customer.location.longitude,
+                    "address": delivery_data.customer.location.address,
+                    "timestamp": delivery_data.customer.location.timestamp or int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "accuracy": delivery_data.customer.location.accuracy,
+                    "source": delivery_data.customer.location.source or "vendor_input"
+                }
+                self.logger.info(f"Customer location captured for delivery {tracking_id}: Lat {customer_location_data['latitude']}, Lng {customer_location_data['longitude']}")
+
             # Create a delivery object
             delivery = {
                 "id": str(uuid.uuid4()),
@@ -189,7 +202,7 @@ class DeliveryRouter:
                 "customer_name": delivery_data.customer.name,
                 "customer_phone": delivery_data.customer.phone_number,
                 "customer_address": delivery_data.customer.address,
-                "customer_location": None,  # Will be set later
+                "customer_location": customer_location_data,  # Store the location data
 
                 "rider_name": delivery_data.rider.name,
                 "rider_phone": delivery_data.rider.phone_number,
@@ -225,7 +238,9 @@ class DeliveryRouter:
             )
 
             self.logger.info(f"Delivery created successfully with tracking ID: {tracking_id}")
-            self.logger.info(f"Delivery details: {created_delivery}")
+
+            if customer_location_data:
+                self.logger.info(f"Customer location stored: Lat {customer_location_data['latitude']}, Lng {customer_location_data['longitude']}")
 
             if not created_delivery:
                 raise HTTPException(
