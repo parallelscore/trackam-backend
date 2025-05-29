@@ -65,7 +65,7 @@ class DeliveryModel(base):
                 "name": self.customer_name,
                 "phone_number": self.customer_phone,
                 "address": self.customer_address,
-                "location": self.customer_location
+                "location": self.customer_location  # Include customer location
             },
 
             "rider": {
