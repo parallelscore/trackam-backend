@@ -2,12 +2,10 @@
 import uuid
 import json
 import asyncio
-from fastapi import status
 from datetime import datetime, timezone
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect, APIRouter
 
 from app.utils.logging_util import setup_logger
-from app.api.routes.base_router import RouterManager
 from app.websockets.events_websocket import EventsWebsocket
 from app.websockets.connection_manager_websocket import connection_manager_websocket
 
@@ -27,17 +25,27 @@ class WebSocketRouter:
         Initialize the WebSocket router.
         """
         self.logger = setup_logger(__name__)
-        self.router_manager = RouterManager()
         self.events_websocket = EventsWebsocket()
 
-        # Add WebSocket route
-        self.router_manager.add_route(
-            path="/ws/delivery/{tracking_id}",
-            handler_method=self.websocket_endpoint,
-            methods=["GET"],
-            tags=["websocket"],
-            status_code=status.HTTP_200_OK
-        )
+        # Create the router directly for WebSocket
+        self.router = APIRouter()
+
+        # Add WebSocket route directly using FastAPI's decorator
+        @self.router.websocket("/ws/delivery/{tracking_id}")
+        async def websocket_endpoint(websocket: WebSocket, tracking_id: str):
+            await self.websocket_endpoint(websocket, tracking_id)
+
+    @property
+    def router_manager(self):
+        """
+        Property to provide compatibility with the existing router manager pattern.
+        Returns an object with a router attribute.
+        """
+        class RouterManagerCompat:
+            def __init__(self, router):
+                self.router = router
+
+        return RouterManagerCompat(self.router)
 
     async def websocket_endpoint(self, websocket: WebSocket, tracking_id: str):
         """
