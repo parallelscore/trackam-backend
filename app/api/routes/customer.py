@@ -5,13 +5,14 @@ from fastapi import HTTPException, status
 from app.utils.logging_util import setup_logger
 from app.api.routes.base_router import RouterManager
 from app.api.models.delivery_model import DeliveryModel
-from app.utils.database_operator_util import database_operator_util
 from app.websockets.events_websocket import EventsWebsocket
+from app.utils.database_operator_util import database_operator_util
 
 
 class CustomerRouter:
     """
     Router for customer-related endpoints.
+    All endpoints are public - no authentication required.
     """
 
     def __init__(self):
@@ -27,7 +28,7 @@ class CustomerRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Confirm delivery receipt
+        # Confirm delivery receipt (no auth required)
         self.router_manager.add_route(
             path="/customer/confirm/{tracking_id}",
             handler_method=self.confirm_delivery,
@@ -66,6 +67,7 @@ class CustomerRouter:
                 "customer": {
                     "name": delivery.get("customer_name"),
                     "address": delivery.get("customer_address"),
+                    "location": delivery.get("customer_location"),
                 },
 
                 # Rider info (limited)
@@ -84,6 +86,7 @@ class CustomerRouter:
                 # Tracking info (limited)
                 "tracking": {
                     "active": delivery.get("is_tracking_active"),
+                    "location_history": delivery.get("location_history", [])
                 }
             }
 
@@ -100,7 +103,8 @@ class CustomerRouter:
 
     async def confirm_delivery(self, tracking_id: str):
         """
-        Confirm delivery receipt by customer.
+        Confirm delivery receipt by customer (no authentication required).
+        Customers can confirm delivery using just the tracking ID.
         """
         try:
             # Get the delivery
