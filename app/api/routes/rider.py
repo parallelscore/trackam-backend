@@ -14,13 +14,15 @@ from app.websockets.events_websocket import EventsWebsocket
 class RiderRouter:
     """
     Router for rider-related endpoints.
+    All endpoints are public - no authentication required.
+    Riders authenticate using OTP verification per delivery.
     """
 
     def __init__(self):
         self.router_manager = RouterManager()
         self.logger = setup_logger(__name__)
 
-        # Verify rider OTP
+        # Verify rider OTP (no auth required)
         self.router_manager.add_route(
             path="/rider/verify-otp",
             handler_method=self.verify_otp,
@@ -29,7 +31,7 @@ class RiderRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Accept delivery (change status to accept)
+        # Accept delivery (no auth required)
         self.router_manager.add_route(
             path="/rider/accept/{tracking_id}",
             handler_method=self.accept_delivery,
@@ -38,7 +40,7 @@ class RiderRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Decline or cancel delivery
+        # Decline or cancel delivery (no auth required)
         self.router_manager.add_route(
             path="/rider/decline/{tracking_id}",
             handler_method=self.decline_delivery,
@@ -47,7 +49,7 @@ class RiderRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Start tracking a delivery
+        # Start tracking a delivery (no auth required)
         self.router_manager.add_route(
             path="/rider/start-tracking/{tracking_id}",
             handler_method=self.start_tracking,
@@ -56,7 +58,7 @@ class RiderRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Update rider location
+        # Update rider location (no auth required)
         self.router_manager.add_route(
             path="/rider/update-location",
             handler_method=self.update_location,
@@ -65,7 +67,7 @@ class RiderRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Complete a delivery
+        # Complete a delivery (no auth required)
         self.router_manager.add_route(
             path="/rider/complete/{tracking_id}",
             handler_method=self.complete_delivery,
@@ -77,6 +79,7 @@ class RiderRouter:
     async def verify_otp(self, data: OtpVerification):
         """
         Verify rider OTP for a delivery.
+        No authentication required - OTP serves as the authentication method.
         """
         try:
             # Get the delivery
@@ -110,7 +113,6 @@ class RiderRouter:
             # Parse the expiry time and ensure it's timezone-aware
             expiry_datetime = datetime.fromisoformat(otp_expiry)
             if expiry_datetime.tzinfo is None:
-                # If the parsed datetime is naive, assume it's in UTC
                 expiry_datetime = expiry_datetime.replace(tzinfo=timezone.utc)
 
             # Now compare with the current UTC time
@@ -161,7 +163,7 @@ class RiderRouter:
 
     async def accept_delivery(self, tracking_id: str):
         """
-        Accept a delivery assignment.
+        Accept a delivery assignment (no authentication required).
         """
         try:
             # Check if delivery exists
@@ -224,7 +226,7 @@ class RiderRouter:
 
     async def decline_delivery(self, tracking_id: str):
         """
-        Decline a delivery assignment.
+        Decline a delivery assignment (no authentication required).
         """
         try:
             # Check if delivery exists
@@ -287,7 +289,7 @@ class RiderRouter:
 
     async def start_tracking(self, tracking_id: str):
         """
-        Start tracking a delivery.
+        Start tracking a delivery (no authentication required).
         """
         try:
             # Get the delivery
@@ -351,7 +353,7 @@ class RiderRouter:
 
     async def update_location(self, location: LocationUpdate):
         """
-        Update rider's current location for a delivery.
+        Update rider's current location for a delivery (no authentication required).
         """
         try:
             # Get the delivery
@@ -382,11 +384,6 @@ class RiderRouter:
                 "accuracy": location.accuracy,
                 "speed": location.speed,
                 "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000)
-            }
-
-            # Update rider's current location
-            rider_location = {
-                "rider_current_location": location_data
             }
 
             # Append to location history
@@ -435,7 +432,7 @@ class RiderRouter:
 
     async def complete_delivery(self, tracking_id: str):
         """
-        Mark a delivery as completed by the rider.
+        Mark a delivery as completed by the rider (no authentication required).
         """
         try:
             # Get the delivery
