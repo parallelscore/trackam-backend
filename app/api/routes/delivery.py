@@ -24,6 +24,10 @@ get_current_user = security_util.get_current_user
 class DeliveryRouter:
     """
     Router for delivery-related endpoints.
+
+    Endpoints are split into:
+    - Private (vendor-only): Create, list, manage deliveries
+    - Public: Track delivery by tracking ID, notify customer
     """
 
     def __init__(self):
@@ -31,7 +35,11 @@ class DeliveryRouter:
         self.logger = setup_logger(__name__)
         self.base_url = settings.FRONTEND_URL
 
-        # Get all deliveries with filtering and pagination
+        # ========================================
+        # PRIVATE ENDPOINTS (Require Authentication)
+        # ========================================
+
+        # Get all deliveries with filtering and pagination (AUTH REQUIRED)
         self.router_manager.add_route(
             path="/deliveries",
             handler_method=self.get_deliveries,
@@ -40,7 +48,7 @@ class DeliveryRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Create a new delivery
+        # Create a new delivery (AUTH REQUIRED)
         self.router_manager.add_route(
             path="/deliveries",
             handler_method=self.create_delivery,
@@ -49,7 +57,7 @@ class DeliveryRouter:
             status_code=status.HTTP_201_CREATED
         )
 
-        # Get delivery by ID
+        # Get delivery by ID (AUTH REQUIRED)
         self.router_manager.add_route(
             path="/deliveries/{delivery_id}",
             handler_method=self.get_delivery,
@@ -58,15 +66,7 @@ class DeliveryRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Get delivery by tracking ID
-        self.router_manager.add_route(
-            path="/deliveries/tracking/{tracking_id}",
-            handler_method=self.get_delivery_by_tracking,
-            methods=["GET"],
-            tags=["delivery"],
-            status_code=status.HTTP_200_OK
-        )
-
+        # Cancel delivery (AUTH REQUIRED)
         self.router_manager.add_route(
             path="/deliveries/{tracking_id}/cancel",
             handler_method=self.cancel_delivery,
@@ -75,6 +75,7 @@ class DeliveryRouter:
             status_code=status.HTTP_200_OK
         )
 
+        # Resend notifications (AUTH REQUIRED)
         self.router_manager.add_route(
             path="/deliveries/{tracking_id}/resend-notifications",
             handler_method=self.resend_notifications,
@@ -83,7 +84,29 @@ class DeliveryRouter:
             status_code=status.HTTP_200_OK
         )
 
-        # Add a new endpoint for notifying customer after OTP verification
+        # Get delivery by tracking ID for vendor (AUTH REQUIRED)
+        self.router_manager.add_route(
+            path="/deliveries/tracking/{tracking_id}",
+            handler_method=self.get_delivery_by_tracking,
+            methods=["GET"],
+            tags=["delivery"],
+            status_code=status.HTTP_200_OK
+        )
+
+        # ========================================
+        # PUBLIC ENDPOINTS (No Authentication Required)
+        # ========================================
+
+        # Public delivery tracking (NO AUTH - for riders/customers)
+        self.router_manager.add_route(
+            path="/public/deliveries/track/{tracking_id}",
+            handler_method=self.get_public_delivery_by_tracking,
+            methods=["GET"],
+            tags=["public-delivery"],
+            status_code=status.HTTP_200_OK
+        )
+
+        # Notify customer after OTP verification (NO AUTH - for riders)
         self.router_manager.add_route(
             path="/deliveries/{tracking_id}/notify-customer",
             handler_method=self.notify_customer,
@@ -92,6 +115,9 @@ class DeliveryRouter:
             status_code=status.HTTP_200_OK
         )
 
+    # ========================================
+    # PRIVATE METHODS (Authentication Required)
+    # ========================================
 
     async def get_deliveries(
             self,
@@ -103,6 +129,7 @@ class DeliveryRouter:
     ):
         """
         Get all deliveries with optional filtering and pagination.
+        REQUIRES AUTHENTICATION - Vendor only.
         """
         try:
             # Build filter expression
@@ -114,7 +141,6 @@ class DeliveryRouter:
             # Apply status filter if provided
             if delivery_status:
                 filter_conditions.append(DeliveryModel.status == delivery_status)
-
                 self.logger.info(f"Filtering deliveries by status: {delivery_status}")
 
             # Apply search filter if provided
@@ -142,7 +168,7 @@ class DeliveryRouter:
                 order_by=DeliveryModel.created_at.desc()
             )
 
-            # Get total count using ORM count method instead of raw SQL
+            # Get total count
             total_count = await database_operator_util.count_entries(
                 DeliveryModel,
                 filter_expr
@@ -153,7 +179,7 @@ class DeliveryRouter:
                 "total": total_count,
                 "page": page,
                 "limit": limit,
-                "pages": (total_count + limit - 1) // limit  # Ceiling division
+                "pages": (total_count + limit - 1) // limit
             }
         except Exception as e:
             self.logger.error(f"Error getting deliveries: {str(e)}")
@@ -165,6 +191,7 @@ class DeliveryRouter:
     async def create_delivery(self, delivery_data: CreateDelivery, current_user: dict = Depends(get_current_user)):
         """
         Create a new delivery with optional customer location.
+        REQUIRES AUTHENTICATION - Vendor only.
         """
         try:
             # Generate a unique tracking ID
@@ -172,7 +199,7 @@ class DeliveryRouter:
 
             # Generate OTP for rider
             otp = ''.join(random.choices(string.digits, k=6))
-            otp_expiry = datetime.now(timezone.utc) + timedelta(minutes=60)  # OTP valid for 1 hour
+            otp_expiry = datetime.now(timezone.utc) + timedelta(minutes=60)
 
             # Generate tracking links
             rider_link = f"{self.base_url}/rider/{tracking_id}"
@@ -202,12 +229,12 @@ class DeliveryRouter:
                 "customer_name": delivery_data.customer.name,
                 "customer_phone": delivery_data.customer.phone_number,
                 "customer_address": delivery_data.customer.address,
-                "customer_location": customer_location_data,  # Store the location data
+                "customer_location": customer_location_data,
 
                 "rider_name": delivery_data.rider.name,
                 "rider_phone": delivery_data.rider.phone_number,
-                "rider_id": None,  # Will be assigned when rider accepts
-                "rider_current_location": None,  # Will be updated during tracking
+                "rider_id": None,
+                "rider_current_location": None,
 
                 "package_description": delivery_data.package.description,
                 "package_size": delivery_data.package.size,
@@ -248,7 +275,7 @@ class DeliveryRouter:
                     detail="Failed to create delivery"
                 )
 
-            # Send WhatsApp notification to rider only (not to customer)
+            # Send WhatsApp notification to rider only
             await self._send_rider_notification(created_delivery)
 
             return created_delivery
@@ -260,67 +287,280 @@ class DeliveryRouter:
                 detail=f"Failed to create delivery: {str(e)}"
             )
 
-    async def _send_rider_notification(self, delivery):
+    async def get_delivery(self, delivery_id: str, current_user: dict = Depends(get_current_user)):
         """
-        Send WhatsApp notification to rider only.
-
-        Args:
-            delivery: The delivery object
+        Get delivery by ID.
+        REQUIRES AUTHENTICATION - Vendor only.
         """
         try:
-            # Extract necessary information
-            tracking_id = delivery.get("tracking_id")
-
-            # Extract from nested structures
-            rider = delivery.get("rider", {})
-            customer = delivery.get("customer", {})
-            package = delivery.get("package", {})
-            tracking = delivery.get("tracking", {})
-
-            otp = tracking.get("otp")
-            rider_phone = rider.get("phone_number")
-            rider_accept_link = f"{self.base_url}/rider/accept/{tracking_id}"
-            customer_name = customer.get("name")
-            customer_address = customer.get("address")
-            package_description = package.get("description")
-            special_instructions = package.get("special_instructions", "")
-
-            # Create rider message
-            rider_message = (
-                f"*New Delivery Request* 🚚\n\n"
-                f"*Tracking ID:* {tracking_id}\n"
-                f"*Customer:* {customer_name}\n"
-                f"*Address:* {customer_address}\n"
-                f"*Package:* {package_description}\n"
+            delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                and_(
+                    DeliveryModel.id == delivery_id,
+                    DeliveryModel.vendor_id == current_user["id"]
+                )
             )
 
-            # Add special instructions if any
-            if special_instructions:
-                rider_message += f"Special Instructions: {special_instructions}\n\n"
-            else:
-                rider_message += "\n"
+            if not delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Delivery not found"
+                )
 
-            rider_message += (
-                f"*Your OTP:* {otp}\n\n"
-                f"Click the link below to accept the delivery:\n"
-                f"{rider_accept_link}"
-            )
-
-            self.logger.info(f"rider_message: {rider_message}")
-
-            # Send WhatsApp message to rider only
-            rider_sent = await sms_service.send_whatsapp(rider_phone, rider_message)
-
-            if rider_sent:
-                self.logger.info(f"WhatsApp notification sent to rider for delivery {tracking_id}")
-                return True
-            else:
-                self.logger.warning(f"Failed to send WhatsApp notification to rider for delivery {tracking_id}")
-                return False
+            return delivery
 
         except Exception as e:
-            self.logger.error(f"Error sending rider notification: {str(e)}")
-            return False
+            self.logger.error(f"Error getting delivery: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve delivery"
+            )
+
+    async def get_delivery_by_tracking(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
+        """
+        Get delivery by tracking ID for vendor.
+        REQUIRES AUTHENTICATION - Vendor only.
+        """
+        try:
+            delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                and_(
+                    DeliveryModel.tracking_id == tracking_id,
+                    DeliveryModel.vendor_id == current_user["id"]
+                )
+            )
+
+            if not delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Delivery not found"
+                )
+
+            return delivery
+
+        except Exception as e:
+            self.logger.error(f"Error getting delivery by tracking ID: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve delivery"
+            )
+
+    async def cancel_delivery(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
+        """
+        Cancel a delivery by its tracking ID.
+        REQUIRES AUTHENTICATION - Vendor only.
+        """
+        try:
+            # Check if delivery exists and belongs to this vendor
+            delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                and_(
+                    DeliveryModel.tracking_id == tracking_id,
+                    DeliveryModel.vendor_id == current_user["id"]
+                )
+            )
+
+            if not delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Delivery not found"
+                )
+
+            # Check if delivery is already completed or cancelled
+            if delivery.get('status') in ['completed', 'cancelled']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot cancel a delivery with status '{delivery.get('status')}'"
+                )
+
+            # Update delivery status to cancelled
+            update_data = {
+                "status": "cancelled",
+                "updated_at": datetime.now(timezone.utc),
+                "is_tracking_active": False
+            }
+
+            await database_operator_util.update(
+                model=DeliveryModel,
+                filter_by={"tracking_id": tracking_id},
+                data=update_data
+            )
+
+            # Get the updated delivery
+            updated_delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                DeliveryModel.tracking_id == tracking_id
+            )
+
+            return updated_delivery
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error cancelling delivery: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to cancel delivery"
+            )
+
+    async def resend_notifications(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
+        """
+        Resend WhatsApp notifications to rider.
+        REQUIRES AUTHENTICATION - Vendor only.
+        """
+        try:
+            # Check if delivery exists and belongs to this vendor
+            delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                and_(
+                    DeliveryModel.tracking_id == tracking_id,
+                    DeliveryModel.vendor_id == current_user["id"]
+                )
+            )
+
+            if not delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Delivery not found"
+                )
+
+            # Get the current time and OTP expiry time
+            current_time = datetime.now(timezone.utc)
+            otp_expiry_str = delivery.get("otp_expiry")
+
+            otp_expired = True
+            if otp_expiry_str:
+                try:
+                    otp_expiry_datetime = datetime.fromisoformat(str(otp_expiry_str).replace('Z', '+00:00'))
+                    if otp_expiry_datetime.tzinfo is None:
+                        otp_expiry_datetime = otp_expiry_datetime.replace(tzinfo=timezone.utc)
+                    otp_expired = current_time > otp_expiry_datetime
+                except (ValueError, TypeError):
+                    self.logger.error(f"Invalid OTP expiry format for delivery {tracking_id}")
+                    otp_expired = True
+
+            # If OTP has expired, generate a new one
+            if otp_expired:
+                self.logger.info(f"OTP expired for delivery {tracking_id}, generating new OTP")
+
+                # Generate new OTP
+                new_otp = ''.join(random.choices(string.digits, k=6))
+                new_otp_expiry = current_time + timedelta(minutes=60)
+
+                # Update delivery with new OTP
+                update_data = {
+                    "otp": new_otp,
+                    "otp_expiry": new_otp_expiry,
+                    "updated_at": current_time
+                }
+
+                await database_operator_util.update(
+                    model=DeliveryModel,
+                    filter_by={"tracking_id": tracking_id},
+                    data=update_data
+                )
+
+                # Fetch updated delivery data
+                delivery = await database_operator_util.find_one(
+                    DeliveryModel,
+                    DeliveryModel.tracking_id == tracking_id
+                )
+
+                self.logger.info(f"Generated new OTP {new_otp} for delivery {tracking_id}")
+            else:
+                self.logger.info(f"Using existing OTP for delivery {tracking_id}")
+
+            # Send notifications only to rider
+            success = await self._send_rider_notification(delivery)
+
+            if not success:
+                return {
+                    "success": False,
+                    "message": "Failed to send rider notification. Please try again later."
+                }
+
+            return {
+                "success": True,
+                "message": "Rider notification resent successfully" + (", with new OTP" if otp_expired else "")
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error resending notifications: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to resend notifications"
+            )
+
+    # ========================================
+    # PUBLIC METHODS (No Authentication Required)
+    # ========================================
+
+    async def get_public_delivery_by_tracking(self, tracking_id: str):
+        """
+        Get delivery by tracking ID - PUBLIC endpoint.
+        NO AUTHENTICATION REQUIRED - For riders and customers.
+        """
+        try:
+            delivery = await database_operator_util.find_one(
+                DeliveryModel,
+                DeliveryModel.tracking_id == tracking_id
+            )
+
+            if not delivery:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Delivery not found"
+                )
+
+            # Return sanitized public version
+            return {
+                "id": delivery.get("id"),
+                "tracking_id": delivery.get("tracking_id"),
+                "status": delivery.get("status"),
+                "created_at": delivery.get("created_at"),
+                "updated_at": delivery.get("updated_at"),
+                "estimated_delivery_time": delivery.get("estimated_delivery_time"),
+
+                # Customer info
+                "customer": {
+                    "name": delivery.get("customer_name"),
+                    "phone_number": delivery.get("customer_phone"),
+                    "address": delivery.get("customer_address"),
+                    "location": delivery.get("customer_location"),
+                },
+
+                # Rider info
+                "rider": {
+                    "id": delivery.get("rider_id"),
+                    "name": delivery.get("rider_name"),
+                    "phone_number": delivery.get("rider_phone"),
+                    "current_location": delivery.get("rider_current_location"),
+                } if delivery.get("rider_name") else None,
+
+                # Package info
+                "package": {
+                    "description": delivery.get("package_description"),
+                    "size": delivery.get("package_size"),
+                    "special_instructions": delivery.get("package_special_instructions"),
+                },
+
+                # Tracking info (for riders - includes OTP)
+                "tracking": {
+                    "otp": delivery.get("otp"),
+                    "otp_expiry": delivery.get("otp_expiry"),
+                    "rider_link": delivery.get("rider_link"),
+                    "customer_link": delivery.get("customer_link"),
+                    "active": delivery.get("is_tracking_active"),
+                    "location_history": delivery.get("location_history", [])
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error getting public delivery by tracking ID: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve delivery"
+            )
 
     async def notify_customer(self, tracking_id: str):
         """
@@ -384,61 +624,71 @@ class DeliveryRouter:
                 detail=f"Failed to send customer notification: {str(e)}"
             )
 
-    async def get_delivery(self, delivery_id: str, current_user: dict = Depends(get_current_user)):
+    # ========================================
+    # HELPER METHODS
+    # ========================================
+
+    async def _send_rider_notification(self, delivery):
         """
-        Get delivery by ID.
-        """
-        try:
-            delivery = await database_operator_util.find_one(
-                DeliveryModel,
-                and_(
-                    DeliveryModel.id == delivery_id,
-                    DeliveryModel.vendor_id == current_user["id"]
-                )
-            )
+        Send WhatsApp notification to rider only.
 
-            if not delivery:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Delivery not found"
-                )
-
-            return delivery
-
-        except Exception as e:
-            self.logger.error(f"Error getting delivery: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to retrieve delivery"
-            )
-
-    async def get_delivery_by_tracking(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
-        """
-        Get delivery by tracking ID.
+        Args:
+            delivery: The delivery object
         """
         try:
-            delivery = await database_operator_util.find_one(
-                DeliveryModel,
-                and_(
-                    DeliveryModel.tracking_id == tracking_id,
-                    DeliveryModel.vendor_id == current_user["id"]
-                )
+            # Extract necessary information
+            tracking_id = delivery.get("tracking_id")
+
+            # Extract from nested structures
+            rider = delivery.get("rider", {})
+            customer = delivery.get("customer", {})
+            package = delivery.get("package", {})
+            tracking = delivery.get("tracking", {})
+
+            otp = tracking.get("otp")
+            rider_phone = rider.get("phone_number")
+            rider_accept_link = f"{self.base_url}/rider/accept/{tracking_id}"
+            customer_name = customer.get("name")
+            customer_address = customer.get("address")
+            package_description = package.get("description")
+            special_instructions = package.get("special_instructions", "")
+
+            # Create rider message
+            rider_message = (
+                f"*New Delivery Request* 🚚\n\n"
+                f"*Tracking ID:* {tracking_id}\n"
+                f"*Customer:* {customer_name}\n"
+                f"*Address:* {customer_address}\n"
+                f"*Package:* {package_description}\n"
             )
 
-            if not delivery:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Delivery not found"
-                )
+            # Add special instructions if any
+            if special_instructions:
+                rider_message += f"Special Instructions: {special_instructions}\n\n"
+            else:
+                rider_message += "\n"
 
-            return delivery
+            rider_message += (
+                f"*Your OTP:* {otp}\n\n"
+                f"Click the link below to accept the delivery:\n"
+                f"{rider_accept_link}"
+            )
+
+            self.logger.info(f"rider_message: {rider_message}")
+
+            # Send WhatsApp message to rider only
+            rider_sent = await sms_service.send_whatsapp(rider_phone, rider_message)
+
+            if rider_sent:
+                self.logger.info(f"WhatsApp notification sent to rider for delivery {tracking_id}")
+                return True
+            else:
+                self.logger.warning(f"Failed to send WhatsApp notification to rider for delivery {tracking_id}")
+                return False
 
         except Exception as e:
-            self.logger.error(f"Error getting delivery by tracking ID: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to retrieve delivery"
-            )
+            self.logger.error(f"Error sending rider notification: {str(e)}")
+            return False
 
     def _generate_tracking_id(self, length=6):
         """
@@ -446,147 +696,3 @@ class DeliveryRouter:
         """
         chars = string.ascii_uppercase + string.digits
         return ''.join(random.choices(chars, k=length))
-
-    async def cancel_delivery(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
-        """
-        Cancel a delivery by its tracking ID.
-        """
-        try:
-            # Check if delivery exists and belongs to this vendor
-            delivery = await database_operator_util.find_one(
-                DeliveryModel,
-                and_(
-                    DeliveryModel.tracking_id == tracking_id,
-                    DeliveryModel.vendor_id == current_user["id"]
-                )
-            )
-
-            if not delivery:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Delivery not found"
-                )
-
-            # Check if delivery is already completed or cancelled
-            if delivery.status in ['completed', 'cancelled']:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Cannot cancel a delivery with status '{delivery.status}'"
-                )
-
-            # Update delivery status to cancelled
-            update_data = {
-                "status": "cancelled",
-                "updated_at": datetime.now(timezone.utc),
-                "is_tracking_active": False
-            }
-
-            await database_operator_util.update(
-                model=DeliveryModel,
-                filter_by={"tracking_id": tracking_id},
-                data=update_data
-            )
-
-            # Get the updated delivery
-            updated_delivery = await database_operator_util.find_one(
-                DeliveryModel,
-                DeliveryModel.tracking_id == tracking_id
-            )
-
-            return updated_delivery
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            self.logger.error(f"Error cancelling delivery: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to cancel delivery"
-            )
-
-    async def resend_notifications(self, tracking_id: str, current_user: dict = Depends(get_current_user)):
-        """
-        Resend WhatsApp notifications to rider.
-        If OTP has expired, generate a new one before sending.
-        """
-        try:
-            # Check if delivery exists and belongs to this vendor
-            delivery = await database_operator_util.find_one(
-                DeliveryModel,
-                and_(
-                    DeliveryModel.tracking_id == tracking_id,
-                    DeliveryModel.vendor_id == current_user["id"]
-                )
-            )
-
-            if not delivery:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Delivery not found"
-                )
-
-            # Get the current time and OTP expiry time
-            current_time = datetime.now(timezone.utc)
-            otp_expiry_str = delivery.get("tracking", {}).get("otp_expiry")
-
-            otp_expired = True
-            if otp_expiry_str:
-                try:
-                    otp_expiry_datetime = datetime.fromisoformat(otp_expiry_str)
-                    otp_expired = current_time > otp_expiry_datetime
-                except (ValueError, TypeError):
-                    self.logger.error(f"Invalid OTP expiry format for delivery {tracking_id}")
-                    # Default to generating a new OTP if we can't parse the expiry
-                    otp_expired = True
-
-            # If OTP has expired, generate a new one
-            if otp_expired:
-                self.logger.info(f"OTP expired for delivery {tracking_id}, generating new OTP")
-
-                # Generate new OTP
-                new_otp = ''.join(random.choices(string.digits, k=6))
-                new_otp_expiry = current_time + timedelta(minutes=60)  # OTP valid for 1 hour
-
-                # Update delivery with new OTP (use the actual column names)
-                update_data = {
-                    "otp": new_otp,
-                    "otp_expiry": new_otp_expiry,
-                    "updated_at": current_time
-                }
-
-                await database_operator_util.update(
-                    model=DeliveryModel,
-                    filter_by={"tracking_id": tracking_id},
-                    data=update_data
-                )
-
-                # Fetch updated delivery data
-                delivery = await database_operator_util.find_one(
-                    DeliveryModel,
-                    DeliveryModel.tracking_id == tracking_id
-                )
-
-                self.logger.info(f"Generated new OTP {new_otp} for delivery {tracking_id}")
-            else:
-                self.logger.info(f"Using existing OTP for delivery {tracking_id}")
-
-            # Send notifications only to rider
-            success = await self._send_rider_notification(delivery)
-
-            if not success:
-                return {
-                    "success": False,
-                    "message": "Failed to send rider notification. Please try again later."
-                }
-
-            return {
-                "success": True,
-                "message": "Rider notification resent successfully" + (", with new OTP" if otp_expired else "")
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error resending notifications: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to resend notifications"
-            )
