@@ -16,6 +16,7 @@ from app.api.routes.base_router import RouterManager
 from app.schemas.delivery_schema import CreateDelivery
 from app.api.models.delivery_model import DeliveryModel
 from app.utils.database_operator_util import database_operator_util
+from app.utils.tracking_id_generator_util import tracking_id_generator
 
 security_util = SecurityUtil()
 get_current_user = security_util.get_current_user
@@ -190,12 +191,12 @@ class DeliveryRouter:
 
     async def create_delivery(self, delivery_data: CreateDelivery, current_user: dict = Depends(get_current_user)):
         """
-        Create a new delivery with optional customer location.
+        Create a new delivery with an optional customer location.
         REQUIRES AUTHENTICATION - Vendor only.
         """
         try:
             # Generate a unique tracking ID
-            tracking_id = self._generate_tracking_id()
+            tracking_id = tracking_id_generator.generate_secure_tracking_id()
 
             # Generate OTP for rider
             otp = ''.join(random.choices(string.digits, k=6))
