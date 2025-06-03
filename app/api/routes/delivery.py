@@ -513,48 +513,7 @@ class DeliveryRouter:
                     detail="Delivery not found"
                 )
 
-            # Return sanitized public version
-            return {
-                "id": delivery.get("id"),
-                "tracking_id": delivery.get("tracking_id"),
-                "status": delivery.get("status"),
-                "created_at": delivery.get("created_at"),
-                "updated_at": delivery.get("updated_at"),
-                "estimated_delivery_time": delivery.get("estimated_delivery_time"),
-
-                # Customer info
-                "customer": {
-                    "name": delivery.get("customer_name"),
-                    "phone_number": delivery.get("customer_phone"),
-                    "address": delivery.get("customer_address"),
-                    "location": delivery.get("customer_location"),
-                },
-
-                # Rider info
-                "rider": {
-                    "id": delivery.get("rider_id"),
-                    "name": delivery.get("rider_name"),
-                    "phone_number": delivery.get("rider_phone"),
-                    "current_location": delivery.get("rider_current_location"),
-                } if delivery.get("rider_name") else None,
-
-                # Package info
-                "package": {
-                    "description": delivery.get("package_description"),
-                    "size": delivery.get("package_size"),
-                    "special_instructions": delivery.get("package_special_instructions"),
-                },
-
-                # Tracking info (for riders - includes OTP)
-                "tracking": {
-                    "otp": delivery.get("otp"),
-                    "otp_expiry": delivery.get("otp_expiry"),
-                    "rider_link": delivery.get("rider_link"),
-                    "customer_link": delivery.get("customer_link"),
-                    "active": delivery.get("is_tracking_active"),
-                    "location_history": delivery.get("location_history", [])
-                }
-            }
+            return delivery
 
         except Exception as e:
             self.logger.error(f"Error getting public delivery by tracking ID: {str(e)}")
